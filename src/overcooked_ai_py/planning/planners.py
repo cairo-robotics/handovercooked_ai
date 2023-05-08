@@ -1464,6 +1464,366 @@ class MediumLevelActionManager(object):
         return possible_motion_goals
 
 
+class MediumLevelActionManagerSingle(object):
+    """
+    Manager for medium level actions (specific joint motion goals).
+    Determines available medium level actions for each state.
+
+    Args:
+        mdp (OvercookedGridWorld): gridworld of interest
+        mlam_params (dictionary): parameters for the medium level action manager
+    """
+
+    def __init__(self, mdp, mlam_params):
+        self.mdp = mdp
+
+        self.params = mlam_params
+        self.wait_allowed = mlam_params["wait_allowed"]
+        self.counter_drop = mlam_params["counter_drop"]
+        self.counter_pickup = mlam_params["counter_pickup"]
+
+        # self.joint_motion_planner = MotionPlanner(mdp, mlam_params)
+        self.motion_planner = MotionPlanner(mdp, counter_goals=mlam_params["counter_goals"])
+
+    def save_to_file(self, filename):
+        with open(filename, "wb") as output:
+            pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+
+    @staticmethod
+    def from_file(filename):
+        return load_saved_action_manager(filename)
+
+    @staticmethod
+    def from_pickle_or_compute(
+        mdp, mlam_params, custom_filename=None, force_compute=False, info=False
+    ):
+        assert isinstance(mdp, OvercookedGridworld)
+
+        filename = (
+            custom_filename
+            if custom_filename is not None
+            else mdp.layout_name + "_am.pkl"
+        )
+
+        if force_compute:
+            return MediumLevelActionManagerSingle.compute_mlam(
+                filename, mdp, mlam_params, info=info
+            )
+
+        try:
+            mlam = MediumLevelActionManagerSingle.from_file(filename)
+
+            if mlam.params != mlam_params or mlam.mdp != mdp:
+                if info:
+                    print(
+                        "medium level action manager with different params or mdp found, computing from scratch"
+                    )
+                return MediumLevelActionManagerSingle.compute_mlam(
+                    filename, mdp, mlam_params, info=info
+                )
+
+        except (
+            FileNotFoundError,
+            ModuleNotFoundError,
+            EOFError,
+            AttributeError,
+        ) as e:
+            if info:
+                print("Recomputing planner due to:", e)
+            return MediumLevelActionManagerSingle.compute_mlam(
+                filename, mdp, mlam_params, info=info
+            )
+
+        if info:
+            print(
+                "Loaded MediumLevelActionManagerSingle from {}".format(
+                    os.path.join(PLANNERS_DIR, filename)
+                )
+            )
+        return mlam
+
+    @staticmethod
+    def compute_mlam(filename, mdp, mlam_params, info=False):
+        final_filepath = os.path.join(PLANNERS_DIR, filename)
+        if info:
+            print(
+                "Computing MediumLevelActionManagerSingle to be saved in {}".format(
+                    final_filepath
+                )
+            )
+        start_time = time.time()
+        mlam = MediumLevelActionManagerSingle(mdp, mlam_params=mlam_params)
+        if info:
+            print(
+                "It took {} seconds to create mlam".format(
+                    time.time() - start_time
+                )
+            )
+        mlam.save_to_file(final_filepath)
+        return mlam
+
+    def joint_ml_actions(self, state):
+        """Determine all possible joint medium level actions for a certain state"""
+        agent_actions = self.get_medium_level_actions(state, state.players[0])
+        # joint_ml_actions = list(
+        #     itertools.product(agent_actions, agent2_actions)
+        # )
+
+        # ml actions are nothing but specific joint motion goals
+        # valid_joint_ml_actions = list(
+        #     filter(
+        #         lambda a: self.is_valid_ml_action(state, a), joint_ml_actions
+        #     )
+        # )
+
+        valid_joint_ml_actions = agent_actions
+
+        # HACK: Could cause things to break.
+        # Necessary to prevent states without successors (due to no counters being allowed and no wait actions)
+        # causing A* to not find a solution
+        # if len(valid_joint_ml_actions) == 0:
+        #     agent_actions, agent2_actions = tuple(
+        #         self.get_medium_level_actions(
+        #             state, player, waiting_substitute=True
+        #         )
+        #         for player in state.players
+        #     )
+        #     joint_ml_actions = list(
+        #         itertools.product(agent_actions, agent2_actions)
+        #     )
+        #     valid_joint_ml_actions = list(
+        #         filter(
+        #             lambda a: self.is_valid_ml_action(state, a),
+        #             joint_ml_actions,
+        #         )
+        #     )
+        #     if len(valid_joint_ml_actions) == 0:
+        #         print(
+        #             "WARNING: Found state without valid actions even after adding waiting substitute actions. State: {}".format(
+        #                 state
+        #             )
+        #         )
+        return valid_joint_ml_actions
+
+    def is_valid_ml_action(self, state, ml_action):
+        return self.motion_planner.is_valid_motion_start_goal_pair(
+            state.players_pos_and_or, ml_action
+        )
+
+    def get_medium_level_actions(
+        self, state, player, waiting_substitute=False
+    ):
+        """
+        Determine valid medium level actions for a player.
+
+        Args:
+            state (OvercookedState): current state
+            player (PlayerState): the player's current state
+            waiting_substitute (bool): add a substitute action that takes the place of
+                                       a waiting action (going to closest feature)
+
+        Returns:
+            player_actions (list): possible motion goals (pairs of goal positions and orientations)
+        """
+        player_actions = []
+        counter_pickup_objects = self.mdp.get_counter_objects_dict(
+            state, self.counter_pickup
+        )
+        if not player.has_object():
+            onion_pickup = self.pickup_onion_actions(counter_pickup_objects)
+            tomato_pickup = self.pickup_tomato_actions(counter_pickup_objects)
+            dish_pickup = self.pickup_dish_actions(counter_pickup_objects)
+            soup_pickup = self.pickup_counter_soup_actions(
+                counter_pickup_objects
+            )
+
+            pot_states_dict = self.mdp.get_pot_states(state)
+            start_cooking = self.start_cooking_actions(pot_states_dict)
+            player_actions.extend(
+                onion_pickup
+                + tomato_pickup
+                + dish_pickup
+                + soup_pickup
+                + start_cooking
+            )
+
+        else:
+            player_object = player.get_object()
+            pot_states_dict = self.mdp.get_pot_states(state)
+
+            # No matter the object, we can place it on a counter
+            if len(self.counter_drop) > 0:
+                player_actions.extend(self.place_obj_on_counter_actions(state))
+
+            if player_object.name == "soup":
+                player_actions.extend(self.deliver_soup_actions())
+            elif player_object.name == "onion":
+                player_actions.extend(
+                    self.put_onion_in_pot_actions(pot_states_dict)
+                )
+            elif player_object.name == "tomato":
+                player_actions.extend(
+                    self.put_tomato_in_pot_actions(pot_states_dict)
+                )
+            elif player_object.name == "dish":
+                # Not considering all pots (only ones close to ready) to reduce computation
+                # NOTE: could try to calculate which pots are eligible, but would probably take
+                # a lot of compute
+                player_actions.extend(
+                    self.pickup_soup_with_dish_actions(
+                        pot_states_dict, only_nearly_ready=False
+                    )
+                )
+            else:
+                raise ValueError("Unrecognized object")
+
+        if self.wait_allowed:
+            player_actions.extend(self.wait_actions(player))
+
+        if waiting_substitute:
+            # Trying to mimic a "WAIT" action by adding the closest allowed feature to the avaliable actions
+            # This is because motion plans that aren't facing terrain features (non counter, non empty spots)
+            # are not considered valid
+            player_actions.extend(self.go_to_closest_feature_actions(player))
+
+        is_valid_goal_given_start = (
+            lambda goal: self.motion_planner.is_valid_motion_start_goal_pair(
+                player.pos_and_or, goal
+            )
+        )
+        player_actions = list(
+            filter(is_valid_goal_given_start, player_actions)
+        )
+        return player_actions
+
+    def pickup_onion_actions(self, counter_objects, only_use_dispensers=False):
+        """If only_use_dispensers is True, then only take onions from the dispensers"""
+        onion_pickup_locations = self.mdp.get_onion_dispenser_locations()
+        if not only_use_dispensers:
+            onion_pickup_locations += counter_objects["onion"]
+        return self._get_ml_actions_for_positions(onion_pickup_locations)
+
+    def pickup_tomato_actions(self, counter_objects):
+        tomato_dispenser_locations = self.mdp.get_tomato_dispenser_locations()
+        tomato_pickup_locations = (
+            tomato_dispenser_locations + counter_objects["tomato"]
+        )
+        return self._get_ml_actions_for_positions(tomato_pickup_locations)
+
+    def pickup_dish_actions(self, counter_objects, only_use_dispensers=False):
+        """If only_use_dispensers is True, then only take dishes from the dispensers"""
+        dish_pickup_locations = self.mdp.get_dish_dispenser_locations()
+        if not only_use_dispensers:
+            dish_pickup_locations += counter_objects["dish"]
+        return self._get_ml_actions_for_positions(dish_pickup_locations)
+
+    def pickup_counter_soup_actions(self, counter_objects):
+        soup_pickup_locations = counter_objects["soup"]
+        return self._get_ml_actions_for_positions(soup_pickup_locations)
+
+    def start_cooking_actions(self, pot_states_dict):
+        """This is for start cooking a pot that is cookable"""
+        cookable_pots_location = self.mdp.get_partially_full_pots(
+            pot_states_dict
+        ) + self.mdp.get_full_but_not_cooking_pots(pot_states_dict)
+        return self._get_ml_actions_for_positions(cookable_pots_location)
+
+    def place_obj_on_counter_actions(self, state):
+        all_empty_counters = set(self.mdp.get_empty_counter_locations(state))
+        valid_empty_counters = [
+            c_pos for c_pos in self.counter_drop if c_pos in all_empty_counters
+        ]
+        return self._get_ml_actions_for_positions(valid_empty_counters)
+
+    def deliver_soup_actions(self):
+        serving_locations = self.mdp.get_serving_locations()
+        return self._get_ml_actions_for_positions(serving_locations)
+
+    def put_onion_in_pot_actions(self, pot_states_dict):
+        partially_full_onion_pots = self.mdp.get_partially_full_pots(
+            pot_states_dict
+        )
+        fillable_pots = partially_full_onion_pots + pot_states_dict["empty"]
+        return self._get_ml_actions_for_positions(fillable_pots)
+
+    def put_tomato_in_pot_actions(self, pot_states_dict):
+        partially_full_onion_pots = self.mdp.get_partially_full_pots(
+            pot_states_dict
+        )
+        fillable_pots = partially_full_onion_pots + pot_states_dict["empty"]
+        return self._get_ml_actions_for_positions(fillable_pots)
+
+    def pickup_soup_with_dish_actions(
+        self, pot_states_dict, only_nearly_ready=False
+    ):
+        ready_pot_locations = pot_states_dict["ready"]
+        nearly_ready_pot_locations = pot_states_dict["cooking"]
+        if not only_nearly_ready:
+            partially_full_pots = self.mdp.get_partially_full_pots(
+                pot_states_dict
+            )
+            nearly_ready_pot_locations = (
+                nearly_ready_pot_locations
+                + pot_states_dict["empty"]
+                + partially_full_pots
+            )
+        return self._get_ml_actions_for_positions(
+            ready_pot_locations + nearly_ready_pot_locations
+        )
+
+    def go_to_closest_feature_actions(self, player):
+        feature_locations = (
+            self.mdp.get_onion_dispenser_locations()
+            + self.mdp.get_tomato_dispenser_locations()
+            + self.mdp.get_pot_locations()
+            + self.mdp.get_dish_dispenser_locations()
+        )
+        closest_feature_pos = self.motion_planner.min_cost_to_feature(
+            player.pos_and_or, feature_locations, with_argmin=True
+        )[1]
+        return self._get_ml_actions_for_positions([closest_feature_pos])
+
+    def go_to_closest_feature_or_counter_to_goal(
+        self, goal_pos_and_or, goal_location
+    ):
+        """Instead of going to goal_pos_and_or, go to the closest feature or counter to this goal, that ISN'T the goal itself"""
+        valid_locations = (
+            self.mdp.get_onion_dispenser_locations()
+            + self.mdp.get_tomato_dispenser_locations()
+            + self.mdp.get_pot_locations()
+            + self.mdp.get_dish_dispenser_locations()
+            + self.counter_drop
+        )
+        valid_locations.remove(goal_location)
+        closest_non_goal_feature_pos = self.motion_planner.min_cost_to_feature(
+            goal_pos_and_or, valid_locations, with_argmin=True
+        )[1]
+        return self._get_ml_actions_for_positions(
+            [closest_non_goal_feature_pos]
+        )
+
+    def wait_actions(self, player):
+        waiting_motion_goal = (player.position, player.orientation)
+        return [waiting_motion_goal]
+
+    def _get_ml_actions_for_positions(self, positions_list):
+        """Determine what are the ml actions (joint motion goals) for a list of positions
+
+        Args:
+            positions_list (list): list of target terrain feature positions
+        """
+        possible_motion_goals = []
+        for pos in positions_list:
+            # All possible ways to reach the target feature
+            for (
+                motion_goal
+            ) in self.motion_planner.motion_goals_for_pos[
+                pos
+            ]:
+                possible_motion_goals.append(motion_goal)
+        return possible_motion_goals
+
+
 # # Deprecated, since agent-level dynamic planning is no longer used
 # class MediumLevelPlanner(object):
 #     """

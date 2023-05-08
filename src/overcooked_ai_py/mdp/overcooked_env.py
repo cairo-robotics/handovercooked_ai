@@ -17,6 +17,7 @@ from overcooked_ai_py.mdp.overcooked_trajectory import (
 from overcooked_ai_py.planning.planners import (
     NO_COUNTERS_PARAMS,
     MediumLevelActionManager,
+    MediumLevelActionManagerSingle,
     MotionPlanner,
 )
 from overcooked_ai_py.utils import append_dictionaries, mean_and_std_err
@@ -90,9 +91,14 @@ class OvercookedEnv(object):
         if self._mlam is None:
             if self.info_level > 0:
                 print("Computing MediumLevelActionManager")
-            self._mlam = MediumLevelActionManager.from_pickle_or_compute(
-                self.mdp, self.mlam_params, force_compute=False
-            )
+            if self.mdp.num_players == 1:
+                self._mlam = MediumLevelActionManagerSingle.from_pickle_or_compute(
+                    self.mdp, self.mlam_params, force_compute=False
+                )
+            else:
+                self._mlam = MediumLevelActionManager.from_pickle_or_compute(
+                    self.mdp, self.mlam_params, force_compute=False
+                )
         return self._mlam
 
     @property
@@ -230,7 +236,7 @@ class OvercookedEnv(object):
         if fname is None:
             print(output_string)
         else:
-            f = open(fname, "a")
+            f = open(fname, "a", encoding="utf-8")
             print(output_string, file=f)
             f.close()
 
@@ -441,7 +447,7 @@ class OvercookedEnv(object):
 
         if dir != None:
             fname = dir + "/roll_out_" + str(time.time()) + ".txt"
-            f = open(fname, "w+")
+            f = open(fname, "w+", encoding="utf-8")
             print(self, file=f)
             f.close()
         while not done:
