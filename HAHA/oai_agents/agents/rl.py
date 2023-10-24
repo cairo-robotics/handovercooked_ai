@@ -1,3 +1,5 @@
+import time
+
 from oai_agents.agents.base_agent import SB3Wrapper, SB3LSTMWrapper, OAITrainer, PolicyClone
 from oai_agents.common.arguments import get_arguments
 from oai_agents.common.networks import OAISinglePlayerFeatureExtractor
@@ -112,10 +114,20 @@ class RLAgentTrainer(OAITrainer):
             self.ck_list.append(({k: 0 for k in self.args.layout_names}, path, tag))
         best_path, best_tag = None, None
 
+        start_time = time.perf_counter()
+
         curr_timesteps = 0
         prev_timesteps = self.learning_agent.num_timesteps
         while curr_timesteps < train_timesteps:
-            print(curr_timesteps, self.learning_agent.num_timesteps)
+            secs = time.perf_counter() - start_time
+            progress = curr_timesteps / train_timesteps
+            estimation = 'Estimating time remaining...' if progress <= 0 else \
+                f"{time.strftime('%H:%M:%S', time.gmtime(secs * ((1 / progress) - 1)))} estimated remaining..."
+
+            print(f"Timesteps: {curr_timesteps}, {self.learning_agent.num_timesteps}")
+            print(f"Training Progress: {progress * 100:.2f}%")
+            print(f"Time elapsed: {time.strftime('%H:%M:%S', time.gmtime(secs))} ({estimation})")
+
             self.set_new_teammates()
             self.learning_agent.learn(total_timesteps=self.epoch_timesteps)
             curr_timesteps += (self.learning_agent.num_timesteps - prev_timesteps)

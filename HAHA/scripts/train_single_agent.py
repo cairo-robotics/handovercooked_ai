@@ -19,5 +19,5 @@ def get_selfplay_agent(args, training_steps=1e7, tag=None):
 
 if __name__ == '__main__':
     args = get_arguments()
-    get_selfplay_agent(args, training_steps=1e7, tag="a2")
+    get_selfplay_agent(args, training_steps=4e6, tag="a1")
     print('GOT SP', flush=True)

@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # agent = HumanManagerHRL(worker, args)
 
 
-    # agent =  load_agent(Path('agent_models/selfplay/aamas24_ent_/agents_dir/agent_0'), args)
+    agent =  load_agent(Path('agent_models/selfplay/best/agents_dir/agent_0'), args)
     # agent = GreedyHumanModel()
     # tm = load_agent(Path('agent_models/old_SP'), args)
 
@@ -46,11 +46,11 @@ if __name__ == "__main__":
 
     layout = "cramped_room_single"
 
-    # dc = OvercookedGUI(args, agent=agent, teammate=None, layout_name=layout, p_idx=args.p_idx)
-    # dc.on_execute()
+    dc = OvercookedGUI(args, agent=agent, teammate=None, layout_name=layout, p_idx=args.p_idx)
+    dc.on_execute()
 
-    score, record = evaluate_agent(agent, layout, num_games=1, horizon=10)
-    print(score)
+    # score, record = evaluate_agent(agent, layout, num_games=1, horizon=10)
+    # print(score)
 
     # agent_eval = AgentEvaluator.from_layout_name({"layout_name": layout}, {})  # , {"num_players": 1})
     # agent_eval.evaluate_oai_agent(agent, 10)

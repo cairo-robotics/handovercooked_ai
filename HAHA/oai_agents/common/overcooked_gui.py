@@ -69,7 +69,7 @@ class OvercookedGUI:
             self.env = OvercookedSubtaskGymEnv(**p_kwargs, **kwargs)
         else:
             self.env = OvercookedGymEnv(layout_name=self.layout_name, args=args, ret_completed_subtasks=True,
-                                        is_eval_env=True, horizon=horizon, num_players=1 if teammate is None else 2)
+                                        is_eval_env=True, horizon=horizon)
         self.agent = agent
         self.p_idx = p_idx
         if teammate is not None:

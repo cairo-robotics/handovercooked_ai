@@ -10,7 +10,7 @@ def evaluate_agent(agent, layout_name, num_games=5, horizon=400):
     args = get_arguments()
 
     env = OvercookedGymEnv(layout_name=layout_name, args=args, ret_completed_subtasks=True,
-                           is_eval_env=True, horizon=horizon, num_players=1)
+                           is_eval_env=True, horizon=horizon)
 
     agent.set_idx(0, env)
     agent.set_encoding_params(env.mdp, horizon)
