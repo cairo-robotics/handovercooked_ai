@@ -2,10 +2,13 @@ import numpy as np
 
 class Subtasks:
     SUBTASKS = ['get_onion_from_dispenser', 'get_onion_from_counter', 'put_onion_in_pot', 'put_onion_closer',
+                'get_tomato_from_dispenser', 'get_tomato_from_counter', 'put_tomato_in_pot', 'put_tomato_closer',
                 'get_plate_from_dish_rack', 'get_plate_from_counter', 'put_plate_closer', 'get_soup',
                 'get_soup_from_counter', 'put_soup_closer', 'serve_soup', 'unknown']
     HUMAN_READABLE_ST = ['Grabbing an onion from dispenser', 'Grabbing an onion from counter',
                          'Putting onion in pot', 'Placing onion closer to pot',
+                         'Grabbing a tomato from dispenser', 'Grabbing a tomato from counter',
+                         'Putting tomato in pot', 'Placing tomato closer to pot',
                          'Grabbing dish from dispenser', 'Grabbing dish from counter',
                          'Placing dish closer to pot', 'Getting the soup',
                          'Grabbing soup from counter', 'Placing soup closer',
@@ -15,12 +18,14 @@ class Subtasks:
     IDS_TO_SUBTASKS = {v: k for k, v in SUBTASKS_TO_IDS.items()}
     HR_SUBTASKS_TO_IDS = {s: i for i, s in enumerate(HUMAN_READABLE_ST)}
     IDS_TO_HR_SUBTASKS = {v: k for k, v in HR_SUBTASKS_TO_IDS.items()}
-    BASE_STS = ['get_onion_from_dispenser', 'put_onion_in_pot', 'get_plate_from_dish_rack', 'get_soup', 'serve_soup']
-    SUPP_STS = ['put_onion_closer']#, 'get_soup_from_counter']#, 'put_plate_closer', 'put_soup_closer'] # 3, 6, 9
-    COMP_STS = ['get_onion_from_counter']#'get_onion_from_counter', 'get_plate_from_counter']#, 'get_soup_from_counter'] # 1, 5, 8
+    BASE_STS = ['get_onion_from_dispenser', 'put_onion_in_pot', 'get_tomato_from_dispenser', 'put_tomato_in_pot',
+                'get_plate_from_dish_rack', 'get_soup', 'serve_soup']
+    SUPP_STS = ['put_onion_closer', 'put_tomato_closer']#, 'get_soup_from_counter']#, 'put_plate_closer', 'put_soup_closer'] # 3, 6, 9
+    COMP_STS = ['get_onion_from_counter', 'get_tomato_from_counter']#'get_onion_from_counter', 'get_plate_from_counter']#, 'get_soup_from_counter'] # 1, 5, 8
     IDS_TO_GOAL_MARKERS = {
-        0: 'onion_dispenser', 1: 'onion', 2: 'empty_pot', 3: 'counter', 4: 'dish_dispenser', 5: 'dish',
-        6: 'counter', 7: 'full_pot', 8: 'soup', 9: 'counter', 10: 'serving_station', 11: 'nothing',
+        0: 'onion_dispenser', 1: 'onion', 2: 'tomato_dispenser', 3: 'tomato', 4: 'empty_pot', 5: 'counter',
+        6: 'dish_dispenser', 7: 'dish', 8: 'counter', 9: 'full_pot', 10: 'soup', 11: 'counter', 12: 'serving_station',
+        13: 'nothing',
     }
 
 
@@ -66,6 +71,26 @@ def calculate_completed_subtask(layout, prev_state, curr_state, p_idx):
         # Facing a counter
         elif tile_in_front == 'X':
             subtask = 'put_onion_closer'
+        else:
+            raise ValueError(f'Unexpected transition. {prev_obj} -> {curr_obj} while facing {tile_in_front}')
+    # Pick up a tomato
+    elif prev_obj is None and curr_obj == 'tomato':
+        # Facing an tomato dispenser
+        if tile_in_front == 'T':
+            subtask = 'get_tomato_from_dispenser'
+        # Facing a counter
+        elif tile_in_front == 'X':
+            subtask = 'get_tomato_from_counter'
+        else:
+            raise ValueError(f'Unexpected transition. {prev_obj} -> {curr_obj} while facing {tile_in_front}')
+    # Place a tomato
+    elif prev_obj == 'tomato' and curr_obj is None:
+        # Facing a pot
+        if tile_in_front == 'P':
+            subtask = 'put_tomato_in_pot'
+        # Facing a counter
+        elif tile_in_front == 'X':
+            subtask = 'put_tomato_closer'
         else:
             raise ValueError(f'Unexpected transition. {prev_obj} -> {curr_obj} while facing {tile_in_front}')
     # Pick up a dish
@@ -148,6 +173,7 @@ def get_doable_subtasks(state, prev_subtask, layout_name, terrain, p_idx, valid_
         # These are always possible if the player is not holding an object
         if not (layout_name == 'forced_coordination' and p_idx == 0):
             subtask_mask[Subtasks.SUBTASKS_TO_IDS['get_onion_from_dispenser']] = 1
+            subtask_mask[Subtasks.SUBTASKS_TO_IDS['get_tomato_from_dispenser']] = 1
         if not (layout_name == 'forced_coordination' and p_idx == 0):
             subtask_mask[Subtasks.SUBTASKS_TO_IDS['get_plate_from_dish_rack']] = 1
 
@@ -156,6 +182,8 @@ def get_doable_subtasks(state, prev_subtask, layout_name, terrain, p_idx, valid_
         for obj in loose_objects:
             if obj.name == 'onion' and prev_subtask != 'put_onion_closer' and obj.position in valid_counters[p_idx]:
                 subtask_mask[Subtasks.SUBTASKS_TO_IDS['get_onion_from_counter']] = 1
+            if obj.name == 'tomato' and prev_subtask != 'put_tomato_closer' and obj.position in valid_counters[p_idx]:
+                subtask_mask[Subtasks.SUBTASKS_TO_IDS['get_tomato_from_counter']] = 1
             elif obj.name == 'dish' and prev_subtask != 'put_plate_closer' and obj.position in valid_counters[p_idx]:
                 subtask_mask[Subtasks.SUBTASKS_TO_IDS['get_plate_from_counter']] = 1
             elif obj.name == 'soup' and prev_subtask != 'put_soup_closer' and obj.position in valid_counters[p_idx]:
@@ -169,6 +197,15 @@ def get_doable_subtasks(state, prev_subtask, layout_name, terrain, p_idx, valid_
         if not (layout_name == 'forced_coordination' and p_idx == 1):
             if non_full_pot_exists(state, terrain, layout_name):
                 subtask_mask[Subtasks.SUBTASKS_TO_IDS['put_onion_in_pot']] = 1
+    # The player is holding a tomato, so it can only accomplish tasks that involve putting the tomato somewhere
+    elif state.players[p_idx].held_object.name == 'tomato':
+        # There must be an empty counter to put something down
+        if len(loose_objects) < n_counters and prev_subtask != 'get_tomato_from_counter':
+            subtask_mask[Subtasks.SUBTASKS_TO_IDS['put_tomato_closer']] = 1
+        # There must be an empty pot to put a tomato into
+        if not (layout_name == 'forced_coordination' and p_idx == 1):
+            if non_full_pot_exists(state, terrain, layout_name):
+                subtask_mask[Subtasks.SUBTASKS_TO_IDS['put_tomato_in_pot']] = 1
     # The player is holding a plate, so it can only accomplish tasks that involve putting the plate somewhere
     elif state.players[p_idx].held_object.name == 'dish':
         # There must be an empty counter to put something down

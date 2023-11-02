@@ -1,5 +1,7 @@
 import time
 
+import pandas
+
 from oai_agents.agents.base_agent import SB3Wrapper, SB3LSTMWrapper, OAITrainer, PolicyClone
 from oai_agents.common.arguments import get_arguments
 from oai_agents.common.networks import OAISinglePlayerFeatureExtractor
@@ -100,11 +102,16 @@ class RLAgentTrainer(OAITrainer):
             agent = SB3Wrapper(sb3_agent, name, self.args)
         return agent
 
-    def train_agents(self, train_timesteps=2e6, exp_name=None):
+    def train_agents(self, train_timesteps=2e6, exp_name=None, data_filename=None):
         exp_name = exp_name or self.args.exp_name
         # run = wandb.init(project="overcooked_ai", entity=self.args.wandb_ent, dir=str(self.args.base_dir / 'wandb'),
         #                  reinit=True, name=exp_name + '_' + self.name, mode=self.args.wandb_mode, id=self.run_id,
         #                  resume="allow")
+        max_evals = int((train_timesteps // (self.epoch_timesteps * 5)) +
+                        ((train_timesteps // self.fcp_ck_rate) if self.fcp_ck_rate else 0))
+        training_data = np.zeros((max_evals, 3))
+        eval_idx = 0
+
         if self.run_id is None:
             self.run_id = 1  # run.id
 
@@ -184,9 +191,28 @@ class RLAgentTrainer(OAITrainer):
                         best_path, best_tag = self.save_agents(tag='best')
                         print(f'New best score of {mean_reward} reached, model saved to {best_path}/{best_tag}')
                         self.best_score = mean_reward
+
+                    if data_filename is not None:
+                        if eval_idx >= max_evals:
+                            print("Max evals exceeded!!!")
+                            training_data = np.append(training_data, np.zeros((max_evals, 3)), axis=0)
+                            max_evals *= 2
+                        training_data[eval_idx,:] = [curr_timesteps, mean_reward, time.perf_counter() - start_time]
+                        eval_idx += 1
+
             self.epoch += 1
+
+        secs = time.perf_counter() - start_time
+        print(f"Time elapsed: {time.strftime('%H:%M:%S', time.gmtime(secs))}")
+
         self.save_agents()
         self.agents = RLAgentTrainer.load_agents(self.args, self.name, best_path, best_tag)
+
+
+
+        if data_filename is not None:
+            df = pandas.DataFrame(training_data[:eval_idx, :], columns=['timestep', 'mean_reward', 'time'])
+            df.to_csv(data_filename)
         # run.finish()
 
     def get_fcp_agents(self, layout_name):
