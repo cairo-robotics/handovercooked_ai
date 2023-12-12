@@ -184,6 +184,13 @@ class SB3Wrapper(OAIAgent):
         self.policy = self.agent.policy
         self.num_timesteps = 0
 
+    def get_confidence(self, obs):
+        if not hasattr(self.agent, 'conf_record'):
+            return False
+
+        state_idx = obs['visual_obs'].tobytes()
+        return self.agent.conf_record.get_confidence(state_idx)
+
     def predict(self, obs, state=None, episode_start=None, deterministic=False):
         # Based on https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/policies.py#L305
         # Updated to include action masking

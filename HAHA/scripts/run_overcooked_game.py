@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from agents.human_proxy import HumanProxy
 from common.benchmarking import evaluate_agent
 from oai_agents.agents.agent_utils import DummyAgent, load_agent
 from oai_agents.agents.hrl import HierarchicalRL
@@ -26,12 +27,13 @@ if __name__ == "__main__":
     args = get_arguments(additional_args)
 
     human = HumanPlayer('human', args)
+    proxy = HumanProxy('proxy', args)
     agent = load_agent(Path('agent_models/selfplay/handover/agents_dir/agent_0'), args)
 
-    layout = "cramped_room_single_recipe4"
+    layout = "cramped_room_single_recipe1"
 
     score, record = evaluate_agent(agent, layout, num_games=1, horizon=400)
     print(score)
 
-    dc = OvercookedGUI(args, agent=agent, teammate=None, layout_name=layout, p_idx=args.p_idx)
+    dc = OvercookedGUI(args, agent=proxy, teammate=None, layout_name=layout, p_idx=args.p_idx)
     dc.on_execute()

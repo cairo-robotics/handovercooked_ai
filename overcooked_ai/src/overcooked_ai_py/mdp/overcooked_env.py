@@ -5,7 +5,8 @@ from overcooked_ai_py.utils import mean_and_std_err, append_dictionaries
 from overcooked_ai_py.mdp.actions import Action
 from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld, EVENT_TYPES
 from overcooked_ai_py.mdp.overcooked_trajectory import TIMESTEP_TRAJ_KEYS, EPISODE_TRAJ_KEYS, DEFAULT_TRAJ_KEYS
-from overcooked_ai_py.planning.planners import MediumLevelActionManager, MotionPlanner, NO_COUNTERS_PARAMS
+from overcooked_ai_py.planning.planners import MediumLevelActionManager, MotionPlanner, NO_COUNTERS_PARAMS, \
+    MediumLevelActionManagerSingle
 
 DEFAULT_ENV_PARAMS = {
     "horizon": 400
@@ -65,8 +66,14 @@ class OvercookedEnv(object):
         if self._mlam is None:
             if self.info_level > 0:
                 print("Computing MediumLevelActionManager")
-            self._mlam = MediumLevelActionManager.from_pickle_or_compute(self.mdp, self.mlam_params,
-                                                                  force_compute=False)
+            if self.mdp.num_players == 1:
+                self._mlam = MediumLevelActionManagerSingle.from_pickle_or_compute(
+                    self.mdp, self.mlam_params, force_compute=False
+                )
+            else:
+                self._mlam = MediumLevelActionManager.from_pickle_or_compute(
+                    self.mdp, self.mlam_params, force_compute=False
+                )
         return self._mlam
 
     @property

@@ -8,6 +8,8 @@ from pygame.locals import HWSURFACE, DOUBLEBUF, RESIZABLE, FULLSCREEN
 import matplotlib
 import time
 
+from oai_agents.agents.confidence import ConfidenceRecord
+
 matplotlib.use('TkAgg')
 
 from os import listdir, environ, system, name
@@ -247,7 +249,12 @@ class OvercookedGUI:
             else:
                 obs = self.env.get_obs(self.env.p_idx, on_reset=False)
                 action = self.agent.predict(obs, state=self.env.state, deterministic=False)[0]
-                # pygame.time.wait(sleep_time)
+                get_conf = getattr(self.agent, "get_confidence", None)
+                if callable(get_conf):
+                    conf = get_conf(obs)
+                    print(f"Current Confidence: {conf}")
+                    if conf > 0.2:
+                        pygame.time.wait(2)
 
             done = self.step_env(action)
             self.human_action = None
@@ -267,3 +274,7 @@ class OvercookedGUI:
     def save_trajectory(self, data_path):
         df = pd.DataFrame(self.trajectory)
         df.to_pickle(data_path / f'{self.layout_name}.{self.trial_id}.pickle')
+
+# class ConfidenceOvercookedGUI(OvercookedGUI):
+#     def __init__(self, args, layout_name=None, agents=None, teammates=None, p_idx=0, horizon=400,
+#                  trial_id=None, user_id=None, stream=None, outlet=None, fps=5):

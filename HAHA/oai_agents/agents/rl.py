@@ -2,6 +2,7 @@ import time
 
 import pandas
 
+from oai_agents.agents.confidence import ConfidencePPO
 from oai_agents.agents.base_agent import SB3Wrapper, SB3LSTMWrapper, OAITrainer, PolicyClone
 from oai_agents.common.arguments import get_arguments
 from oai_agents.common.networks import OAISinglePlayerFeatureExtractor
@@ -15,13 +16,15 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from sb3_contrib import RecurrentPPO, MaskablePPO
 import wandb
 
-VEC_ENV_CLS = DummyVecEnv #
+VEC_ENV_CLS = DummyVecEnv  #
 
 
 class RLAgentTrainer(OAITrainer):
     ''' Train an RL agent to play with a provided agent '''
+
     def __init__(self, teammates, args, selfplay=False, name=None, env=None, eval_envs=None,
-                 use_cnn=False, use_lstm=False, use_frame_stack=False, taper_layers=False, use_subtask_counts=False,
+                 use_cnn=False, use_lstm=False, use_conf=False, use_frame_stack=False, taper_layers=False,
+                 use_subtask_counts=False,
                  use_policy_clone=False, num_layers=2, hidden_dim=256, use_subtask_eval=False, use_hrl=False,
                  fcp_ck_rate=None, seed=None):
         name = name or 'rl_agent'
@@ -55,7 +58,7 @@ class RLAgentTrainer(OAITrainer):
         for i in range(self.args.n_envs):
             self.env.env_method('set_env_layout', indices=i, env_index=i % self.n_layouts)
 
-        layers = [hidden_dim // (2**i) for i in range(num_layers)] if taper_layers else [hidden_dim] * num_layers
+        layers = [hidden_dim // (2 ** i) for i in range(num_layers)] if taper_layers else [hidden_dim] * num_layers
         policy_kwargs = dict(net_arch=[dict(pi=layers, vf=layers)])
         if use_cnn:
             print('USING CNN')
@@ -75,6 +78,11 @@ class RLAgentTrainer(OAITrainer):
             sb3_agent = MaskablePPO('MultiInputPolicy', self.env, policy_kwargs=policy_kwargs, verbose=1, n_steps=500,
                                     n_epochs=4, learning_rate=0.0003, batch_size=500, ent_coef=0.001, vf_coef=0.3,
                                     gamma=0.99, gae_lambda=0.95)
+            agent_name = f'{name}'
+        elif use_conf:
+            sb3_agent = ConfidencePPO("MultiInputPolicy", self.env, policy_kwargs=policy_kwargs, verbose=1, n_steps=500,
+                                      n_epochs=4, learning_rate=0.0003, batch_size=500, ent_coef=0.001, vf_coef=0.3,
+                                      gamma=0.99, gae_lambda=0.95)
             agent_name = f'{name}'
         else:
             sb3_agent = PPO("MultiInputPolicy", self.env, policy_kwargs=policy_kwargs, verbose=1, n_steps=500,
@@ -107,9 +115,10 @@ class RLAgentTrainer(OAITrainer):
         # run = wandb.init(project="overcooked_ai", entity=self.args.wandb_ent, dir=str(self.args.base_dir / 'wandb'),
         #                  reinit=True, name=exp_name + '_' + self.name, mode=self.args.wandb_mode, id=self.run_id,
         #                  resume="allow")
+        training_data_headers = ['timestep', 'time', 'mean_reward', 'conf_mean', 'conf_std', 'seen_states']
         max_evals = int((train_timesteps // (self.epoch_timesteps * 5)) +
                         ((train_timesteps // self.fcp_ck_rate) if self.fcp_ck_rate else 0))
-        training_data = np.zeros((max_evals, 3))
+        training_data = np.zeros((max_evals, len(training_data_headers)))
         eval_idx = 0
 
         if self.run_id is None:
@@ -155,8 +164,10 @@ class RLAgentTrainer(OAITrainer):
             # Evaluate
             mean_training_rew = np.mean([ep_info["r"] for ep_info in self.learning_agent.agent.ep_info_buffer])
             self.best_training_rew *= 0.98
-            if (self.epoch + 1) % 5 == 0 or (mean_training_rew > self.best_training_rew and self.learning_agent.num_timesteps >= 1e6) or \
-                (self.fcp_ck_rate and self.learning_agent.num_timesteps // self.fcp_ck_rate > (len(self.ck_list) - 1)):
+            if (self.epoch + 1) % 5 == 0 or (
+                    mean_training_rew > self.best_training_rew and self.learning_agent.num_timesteps >= 1e6) or \
+                    (self.fcp_ck_rate and self.learning_agent.num_timesteps // self.fcp_ck_rate > (
+                            len(self.ck_list) - 1)):
                 if mean_training_rew >= self.best_training_rew:
                     self.best_training_rew = mean_training_rew
 
@@ -165,7 +176,8 @@ class RLAgentTrainer(OAITrainer):
                     use_layout_specific_tms = type(self.eval_teammates) == dict
                     tot_failures = 0
                     for env in self.eval_envs:
-                        tms = self.eval_teammates[env.get_layout_name()] if use_layout_specific_tms else self.eval_teammates
+                        tms = self.eval_teammates[
+                            env.get_layout_name()] if use_layout_specific_tms else self.eval_teammates
                         for tm in tms:
                             env.set_teammate(tm)
                             fully_successful, num_failures = env.evaluate(self.learning_agent)
@@ -176,11 +188,13 @@ class RLAgentTrainer(OAITrainer):
                     if tot_failures <= self.fewest_failures:
                         best_path, best_tag = self.save_agents(tag='best')
                         self.fewest_failures = tot_failures
-                        print(f'New fewest failures of {self.fewest_failures} reached, model saved to {best_path}/{best_tag}')
+                        print(
+                            f'New fewest failures of {self.fewest_failures} reached, model saved to {best_path}/{best_tag}')
                     if all(env_success):
                         break
                 else:
-                    mean_reward, rew_per_layout = self.evaluate(self.learning_agent, timestep=self.learning_agent.num_timesteps)
+                    mean_reward, rew_per_layout = self.evaluate(self.learning_agent,
+                                                                timestep=self.learning_agent.num_timesteps)
                     # FCP pop checkpointing
                     if self.fcp_ck_rate:
                         if self.learning_agent.num_timesteps // self.fcp_ck_rate > (len(self.ck_list) - 1):
@@ -193,11 +207,12 @@ class RLAgentTrainer(OAITrainer):
                         self.best_score = mean_reward
 
                     if data_filename is not None:
-                        if eval_idx >= max_evals:
+                        if eval_idx >= training_data.shape[0]:
                             print("Max evals exceeded!!!")
-                            training_data = np.append(training_data, np.zeros((max_evals, 3)), axis=0)
-                            max_evals *= 2
-                        training_data[eval_idx,:] = [curr_timesteps, mean_reward, time.perf_counter() - start_time]
+                            training_data = np.append(training_data, np.zeros(training_data.shape), axis=0)
+                        conf_mean, conf_std, seen_states = self.learning_agent.agent.conf_record.get_avg_confidence()
+                        training_data[eval_idx, :] = [curr_timesteps, time.perf_counter() - start_time,
+                                                      mean_reward, conf_mean, conf_std, seen_states]
                         eval_idx += 1
 
             self.epoch += 1
@@ -208,10 +223,8 @@ class RLAgentTrainer(OAITrainer):
         self.save_agents()
         self.agents = RLAgentTrainer.load_agents(self.args, self.name, best_path, best_tag)
 
-
-
         if data_filename is not None:
-            df = pandas.DataFrame(training_data[:eval_idx, :], columns=['timestep', 'mean_reward', 'time'])
+            df = pandas.DataFrame(training_data[:eval_idx, :], columns=training_data_headers)
             df.to_csv(data_filename)
         # run.finish()
 
