@@ -28,7 +28,6 @@ class HumanProxy(OAIAgent):
 
     def predict(self, obs: th.Tensor, state=None, episode_start=None, deterministic: bool = False):
         action = self.proxy.action(state)
-        print(action[1]['action_probs'])
         return action[1]['action_probs'].argmax(), None
 
     def get_distribution(self, obs: th.Tensor) -> Union[th.distributions.Distribution, sb3_distributions.Distribution]:

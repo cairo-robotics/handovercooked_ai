@@ -239,7 +239,7 @@ class StateVisualizer:
     def _unscaled_grid_pixel_size(self, grid):
         y_tiles = len(grid)
         x_tiles = len(grid[0])
-        return (x_tiles * self.UNSCALED_TILE_SIZE, y_tiles * self.UNSCALED_TILE_SIZE)
+        return x_tiles * self.UNSCALED_TILE_SIZE, (y_tiles+1) * self.UNSCALED_TILE_SIZE
 
     def _render_grid(self, surface, grid):
         for y_tile, row in enumerate(grid):

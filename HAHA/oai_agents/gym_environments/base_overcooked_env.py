@@ -199,14 +199,14 @@ class OvercookedGymEnv(Env):
             obs = {k: v for k, v in obs.items() if k in self.observation_space.keys()}
         return obs
 
-    def step(self, action):
+    def step(self, action, unstick=True):
         if self.num_players == 1:
             joint_action = [Action.INDEX_TO_ACTION[(action.squeeze() if type(action) != int else action)]]
             self.joint_action = joint_action
 
             # If the state didn't change from the previous timestep and the agent is choosing the same action
             # then play a random action instead. Prevents agents from getting stuck
-            if self.prev_state and self.state.time_independent_equal(self.prev_state) and \
+            if unstick and self.prev_state and self.state.time_independent_equal(self.prev_state) and \
                     tuple(joint_action) == tuple(self.prev_actions):
                 action = np.random.choice(range(len(Direction.ALL_DIRECTIONS)))
                 joint_action = [Direction.INDEX_TO_DIRECTION[action]]

@@ -48,13 +48,16 @@ def plot_training_data(data_file):
 
 
 if __name__ == '__main__':
-    training_steps = 2e6
+    training_steps = 1e5  # This seems to be a good amount for an undertrained but sometimes competent ai agent
     filename = f'{training_steps:.0E}-conf-data.csv'
 
     # --n-envs 9 --layout-names cramped_room_single,cramped_room_single_v2,cramped_room_single_v3,cramped_room_single_v4,cramped_room_single_v5,cramped_room_single_v6,cramped_room_single_v7,cramped_room_single_v8,cramped_room_single_v9,cramped_room_single_v10
     # --layout-names cramped_room_single_recipes
     # --n-envs 3 --layout-names cramped_room_single_recipe1,cramped_room_single_recipe2,cramped_room_single_recipe3,cramped_room_single_recipe4
+
     args = get_arguments()
+    args.layout_names = ["cramped_room_single"]
+    args.exp_name = "handover"
     train_selfplay_agent(args, training_steps=training_steps, n_checkpoints=10, save_filename=filename)
 
     plot_training_data(filename)
